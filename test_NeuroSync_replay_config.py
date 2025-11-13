@@ -11,7 +11,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, message="The window h
 
 # 基础配置
 UI_TIMIEOUT = 3
-TEST_DURATION = 12 * 3600  # 12小时
+TEST_DURATION = 300#12 * 3600  # 12小时
 CYCLE_INTERVAL = 10  # 循环间隔（秒）
 
 # 功能开关配置（控制是否执行）
@@ -616,6 +616,9 @@ def run_cycle_operations(main_window):
         else:
             STATS['fail_cycles'] += 1
             print(f"===== 第 {STATS['total_cycles']} 次循环部分模块失败 =====")
+        
+        # 每次循环结束后输出累计统计
+        print(f"当前累计：总循环 {STATS['total_cycles']} 次，成功 {STATS['success_cycles']} 次，失败 {STATS['fail_cycles']} 次")
         return True
 
     except Exception as e:
@@ -623,6 +626,8 @@ def run_cycle_operations(main_window):
         print(error_msg)
         STATS['fail_cycles'] += 1
         STATS['error_log'].append(error_msg)
+        # 异常时也输出累计统计
+        print(f"当前累计：总循环 {STATS['total_cycles']} 次，成功 {STATS['success_cycles']} 次，失败 {STATS['fail_cycles']} 次")
         return False
 
 def main():
@@ -643,8 +648,10 @@ def main():
             if remaining_time > CYCLE_INTERVAL:
                 time.sleep(CYCLE_INTERVAL)
             else:
-                time.sleep(remaining_time)
-                break
+                # 只在剩余时间为正数时睡眠，否则直接结束
+                if remaining_time > 0:
+                    time.sleep(remaining_time)
+                break  # 无论剩余时间是否为正，都退出循环
 
         print(f"\n===== 测试完成！=====")
         print(f"总循环次数：{STATS['total_cycles']}")
