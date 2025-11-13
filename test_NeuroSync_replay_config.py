@@ -11,7 +11,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, message="The window h
 
 # 基础配置
 UI_TIMIEOUT = 3
-TEST_DURATION = 300#12 * 3600  # 12小时
+TEST_DURATION = 60#12 * 3600  # 12小时
 CYCLE_INTERVAL = 10  # 循环间隔（秒）
 
 # 功能开关配置（控制是否执行）
@@ -25,6 +25,17 @@ RUN_CONFIG = {
 
 # 业务参数配置（核心：下拉框保留auto_id，新增序号定位开关）
 CONFIG = {
+    # 核心路径配置（移至最前，方便修改）
+    "APP_PATH": r"D:\Program Files\NeuroSync\Replay3\NeuroSync.Client.Replay.exe",
+    "FILE_DIR": r"D:\edfx\V25OB3000test20250924191457\V25OB3000test20250924191457",
+    
+    # 通道选择配置（紧随路径配置）
+    "CHANNEL_CONFIG": {
+        "target_channels": [2, 3],
+        "btn_cl_auto_id": "btn_cl",
+        "btn_confirm_auto_id": "btn_confirm"
+    },
+
     # 下拉框配置（优先用auto_id，无则开启use_index）
     "DROPDOWNS": {
         "DAO_LIAN": {
@@ -78,7 +89,8 @@ CONFIG = {
         #     "option_name": "自定义下拉框"
         # }
     },
-    # 其他配置（保持不变）
+
+    # 其他配置
     "TAG_LIST": {
         'Eyes Open', 'Eyes Closed', 'Seizure', 'Deep Breath', 'Background', 'Awake',
         'Eyes Closed PPR', 'Eyes Shut PPR', 'Eyes Open PCR', 'Electrical Seizure', 'End',
@@ -95,21 +107,13 @@ CONFIG = {
         {"title_re": "Previous Page", "name": "上一页", "click_count": 3, "interval": 0.3},
         {"title_re": "Next Page", "name": "下一页", "click_count": 3, "interval": 0.3}
     ],
-    "CHANNEL_CONFIG": {
-        "target_channels": [2, 3],
-        "btn_cl_auto_id": "btn_cl",
-        "btn_confirm_auto_id": "btn_confirm"
-    },
     "PROGRESS_BAR": {
         "auto_id": "slider_play_jd",
         "drag_cycles": 10,
         "min_percent": 1,
         "max_percent": 99
-    },
-    "APP_PATH": r"D:\Program Files\NeuroSync\Replay3\NeuroSync.Client.Replay.exe",
-    "FILE_DIR": r"D:\edfx\V25OB3000test20250924191457\V25OB3000test20250924191457"
+    }
 }
-
 # 统计变量
 STATS = {
     "total_cycles": 0,
@@ -583,12 +587,12 @@ def init_application():
         time.sleep(2)
         print("0.2s line 点击成功")
 
-        # 初始化通道选择
-        if RUN_CONFIG["channel_selection"]:
-            execute_channel_selection(main_window)
-            RUN_CONFIG["channel_selection"] = False  # 初始化后关闭，避免重复执行
+        # # 初始化通道选择
+        # if RUN_CONFIG["channel_selection"]:
+        #     execute_channel_selection(main_window)
+        #     RUN_CONFIG["channel_selection"] = False  # 初始化后关闭，避免重复执行
 
-        print("===== 应用初始化完成 =====")
+        # print("===== 应用初始化完成 =====")
         return app, main_window
 
     except Exception as e:
@@ -604,6 +608,7 @@ def run_cycle_operations(main_window):
         
         module_results = [
             execute_dropdown_config(main_window),
+            execute_channel_selection(main_window),
             execute_nav_buttons(main_window),
             drag_progress_in_cycles(main_window),
             execute_tag_marking(main_window),
