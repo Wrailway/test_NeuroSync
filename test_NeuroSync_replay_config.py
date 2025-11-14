@@ -3,6 +3,7 @@ import time
 import os
 import ctypes
 import warnings
+from datetime import datetime
 from pywinauto import Application, mouse
 from pywinauto.findwindows import find_window
 from pywinauto.timings import wait_until_passes
@@ -23,75 +24,66 @@ RUN_CONFIG = {
     "nav_buttons": True,        # 导航按钮
     "drag_progress_bar": True,  # 进度条拖拽
     "tag_marking": True,        # 标签标记
-    "channel_selection": True,  # 通道选择（默认初始化后关闭）
-    "move_video_window":True    # 视频窗口拖动   
+    "channel_selection": True,  # 通道选择
+    "move_video_window": True   # 视频窗口拖动   
 }
 
-# 业务参数配置（核心：下拉框保留auto_id，新增序号定位开关）
+# 业务参数配置
 CONFIG = {
-    # 核心路径配置（移至最前，方便修改）
+    # 核心路径配置
     "APP_PATH": r"D:\Program Files\NeuroSync\Replay3\NeuroSync.Client.Replay.exe",
     "FILE_DIR": r"D:\edfx\V25OB3000test20250924191457\V25OB3000test20250924191457",
     
-    # 通道选择配置（紧随路径配置）
+    # 通道选择配置
     "CHANNEL_CONFIG": {
         "target_channels": [2, 3],
         "btn_cl_auto_id": "btn_cl",
         "btn_confirm_auto_id": "btn_confirm"
     },
 
-    # 下拉框配置（优先用auto_id，无则开启use_index）
+    # 下拉框配置（优先用auto_id）
     "DROPDOWNS": {
         "DAO_LIAN": {
-            "auto_id": "cb_daolian",  # 导联有auto_id，优先使用
-            "use_index": False,       # 不启用序号定位
-            "fixed_index": 0,         # 固定选择第1项
+            "auto_id": "cb_daolian",
+            "use_index": False,
+            "fixed_index": 0,
             "option_name": "导联"
         },
         "SWEEP_SPEED": {
-            "auto_id": "cb_zouzhisudu",  # 走纸速度有auto_id
+            "auto_id": "cb_zouzhisudu",
             "use_index": False,
             "range": range(0, 22),
             "is_random": True,
             "option_name": "走纸速度"
         },
         "SENSITIVITY": {
-            "auto_id": "cb_lingmindu",   # 灵敏度有auto_id
+            "auto_id": "cb_lingmindu",
             "use_index": False,
             "range": range(0, 16),
             "is_random": True,
             "option_name": "灵敏度"
         },
         "HIGH_PASS": {
-            "auto_id": "cb_lvboxiaxian",  # 高通滤波有auto_id
+            "auto_id": "cb_lvboxiaxian",
             "use_index": False,
             "range": range(0, 11),
             "is_random": True,
             "option_name": "高通滤波"
         },
         "LOW_PASS": {
-            "auto_id": "cb_lvboshangxian", # 低通滤波有auto_id
+            "auto_id": "cb_lvboshangxian",
             "use_index": False,
             "range": range(0, 6),
             "is_random": True,
             "option_name": "低通滤波"
         },
         "PLAYBACK_SPEED": {
-            "auto_id": "cb_bofangbeishu",  # 播放倍速有auto_id
+            "auto_id": "cb_bofangbeishu",
             "use_index": False,
             "range": range(0, 8),
             "is_random": True,
             "option_name": "播放倍速"
-        },
-        # 示例：无auto_id的下拉框（启用序号定位）
-        # "CUSTOM_COMBO": {
-        #     "auto_id": "",
-        #     "use_index": True,    # 启用序号定位
-        #     "combo_index": 0,     # 第1个ComboBox
-        #     "range": range(0, 5),
-        #     "is_random": True,
-        #     "option_name": "自定义下拉框"
-        # }
+        }
     },
 
     # 其他配置
@@ -118,6 +110,7 @@ CONFIG = {
         "max_percent": 99
     }
 }
+
 # 统计变量
 STATS = {
     "total_cycles": 0,
@@ -129,7 +122,7 @@ STATS = {
         "drag_progress_bar": {"success": 0, "fail": 0},
         "tag_marking": {"success": 0, "fail": 0},
         "channel_selection": {"success": 0, "fail": 0},
-        "move_video_window": {"success": 0, "fail": 0} 
+        "move_video_window": {"success": 0, "fail": 0}
     },
     "error_log": []
 }
@@ -146,19 +139,20 @@ def safe_set_focus(window, max_retries=3, delay=0.5):
             time.sleep(delay)
     return False
 
+# 新增全局变量：记录播放倍速选择时的索引（初始值-1）
+PLAYBACK_SPEED_INDEX = -1
 def select_dropdown_option(main_window, config):
-    """下拉框选择函数（优先auto_id，无则用序号）"""
+    """下拉框选择函数（优先auto_id）"""
+    global PLAYBACK_SPEED_INDEX  # 引用全局变量
     try:
         option_name = config["option_name"]
-        # 1. 定位下拉框（优先用auto_id，无则用序号）
+        # 定位下拉框
         if not config["use_index"] and config["auto_id"]:
-            # 原有逻辑：用auto_id定位（不修改）
             dropdown = main_window.child_window(
                 auto_id=config["auto_id"],
                 control_type="ComboBox"
             )
         else:
-            # 新增逻辑：用序号定位（仅对无auto_id的控件启用）
             if not config.get("combo_index"):
                 raise Exception(f"{option_name}未配置序号（combo_index）")
             dropdown = main_window.child_window(
@@ -172,13 +166,13 @@ def select_dropdown_option(main_window, config):
         dropdown.click_input()
         time.sleep(1.5)
 
-        # 2. 获取选项列表
+        # 获取选项列表
         items = dropdown.descendants(control_type="ListItem")
         if not items:
             raise Exception(f"未找到任何{option_name}选项")
         max_valid_index = len(items) - 1
 
-        # 3. 确定目标索引
+        # 确定目标索引
         if config.get("is_random", False):
             valid_indices = [idx for idx in config["range"] if 0 <= idx <= max_valid_index]
             if not valid_indices:
@@ -189,17 +183,21 @@ def select_dropdown_option(main_window, config):
             if not (0 <= target_index <= max_valid_index):
                 raise Exception(f"{option_name}索引{target_index}超出范围（最大{max_valid_index}）")
 
-        # 4. 检查当前选中项
+        # 检查当前选中项
         current_selected = next((item for item in items if item.is_selected()), None)
         current_index = items.index(current_selected) if current_selected else 0
 
         if current_index == target_index:
             print(f"当前已选中{option_name}第{target_index+1}项，无需切换")
             dropdown.type_keys("{ESC}")
+            # ===== 在这里添加（未切换选项时也需要打印）=====
+            if config["option_name"] == "播放倍速":
+                PLAYBACK_SPEED_INDEX = target_index
+                print(f"选中的播放倍速选项：（索引{target_index+1}）")
             return
 
-        # 5. 切换选项
-        dropdown.type_keys("{HOME}")  # 跳至第一项
+        # 切换选项
+        dropdown.type_keys("{HOME}")
         time.sleep(0.3)
         dropdown.type_keys(f"{{DOWN {target_index}}}")
         time.sleep(0.3)
@@ -208,31 +206,34 @@ def select_dropdown_option(main_window, config):
         target_item.click_input()
         dropdown.type_keys("{ESC}")
         print(f"{option_name}已选择第{target_index+1}项")
+        # ===== 在这里添加（未切换选项时也需要打印）=====
+        if config["option_name"] == "播放倍速":
+            # selected_text = items[target_index].window_text()
+            PLAYBACK_SPEED_INDEX = target_index  # 保存当前选择的索引
+            print(f"选中的播放倍速选项：（索引{target_index+1}）")
 
     except Exception as e:
         raise Exception(f"{option_name}选择失败：{str(e)}")
 
 def execute_dropdown_config(main_window):
-    """执行下拉框配置（保留auto_id逻辑，兼容序号定位）"""
+    """执行下拉框配置"""
     if not RUN_CONFIG["dropdown_config"]:
         print("\n【下拉框配置】已关闭，跳过该模块")
         return True
     try:
         print("\n===== 开始下拉框参数配置 =====")
-        # 遍历所有下拉框配置（优先auto_id）
         for dropdown_key in CONFIG["DROPDOWNS"]:
             select_dropdown_option(main_window, CONFIG["DROPDOWNS"][dropdown_key])
         print("===== 下拉框参数配置完成 =====")
         STATS["module_stats"]["dropdown_config"]["success"] += 1
         return True
     except Exception as e:
-        error_msg = f"下拉框配置失败：{str(e)}"
+        error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 下拉框配置失败：{str(e)}"
         print(f"===== {error_msg} =====")
         STATS["module_stats"]["dropdown_config"]["fail"] += 1
         STATS["error_log"].append(error_msg)
         return False
 
-# 以下函数逻辑不变（标签标记、导航按钮、通道选择、进度条拖拽等）
 def find_and_click_tag(main_window, target_title):
     try:
         tag_btn = main_window.child_window(
@@ -287,7 +288,7 @@ def execute_tag_marking(main_window):
         STATS["module_stats"]["tag_marking"]["success"] += 1
         return True
     except Exception as e:
-        error_msg = f"标签标记失败：{str(e)}"
+        error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 标签标记失败：{str(e)}"
         print(f"===== {error_msg} =====")
         STATS["module_stats"]["tag_marking"]["fail"] += 1
         STATS["error_log"].append(error_msg)
@@ -326,7 +327,7 @@ def execute_nav_buttons(main_window):
         STATS["module_stats"]["nav_buttons"]["success"] += 1
         return True
     except Exception as e:
-        error_msg = f"导航按钮操作失败：{str(e)}"
+        error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 导航按钮操作失败：{str(e)}"
         print(f"===== {error_msg} =====")
         STATS["module_stats"]["nav_buttons"]["fail"] += 1
         STATS["error_log"].append(error_msg)
@@ -336,7 +337,7 @@ def select_specific_channels(main_window):
     target_channels = CONFIG["CHANNEL_CONFIG"]["target_channels"]
     for num in target_channels:
         success = False
-        for retry in range(3):  # 3次重试
+        for retry in range(3):
             try:
                 channel = main_window.child_window(
                     title_re=rf"^\s*{num}\s*$",
@@ -375,18 +376,16 @@ def execute_channel_selection(main_window):
         return True
     try:
         print("\n===== 开始通道选择 =====")
-        # 选择第一个匹配的通道列表按钮（关键修改）
         btn_cl = main_window.child_window(
             auto_id=CONFIG["CHANNEL_CONFIG"]["btn_cl_auto_id"],
             control_type="Button",
-            found_index=0  # 强制选择第一个
+            found_index=0
         )
         btn_cl.wait("enabled", timeout=UI_TIMIEOUT)
         btn_cl.click_input()
         time.sleep(3)
         print("已点击第一个通道列表展开按钮")
 
-        # 后续逻辑不变...
         cbx_all = main_window.child_window(title='All', control_type="CheckBox")
         cbx_all.wait("enabled", timeout=UI_TIMIEOUT)
         if cbx_all.get_toggle_state() == 1:
@@ -401,7 +400,7 @@ def execute_channel_selection(main_window):
         btn_confirm = main_window.child_window(
             auto_id=CONFIG["CHANNEL_CONFIG"]["btn_confirm_auto_id"],
             control_type="Button",
-            found_index=0  # 确认按钮也建议加索引，确保唯一性
+            found_index=0
         )
         btn_confirm.wait("enabled", timeout=UI_TIMIEOUT)
         btn_confirm.click_input()
@@ -411,7 +410,7 @@ def execute_channel_selection(main_window):
         STATS["module_stats"]["channel_selection"]["success"] += 1
         return True
     except Exception as e:
-        error_msg = f"通道选择失败：{str(e)}"
+        error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 通道选择失败：{str(e)}"
         print(f"===== {error_msg} =====")
         STATS["module_stats"]["channel_selection"]["fail"] += 1
         STATS["error_log"].append(error_msg)
@@ -425,19 +424,18 @@ def drag_progress_in_cycles(main_window):
         print("\n===== 开始进度条拖拽 =====")
         progress_config = CONFIG["PROGRESS_BAR"]
         
-        # 1. 校验进度条控件是否存在
+        # 校验进度条控件
         try:
             progress_bar = main_window.child_window(
                 auto_id=progress_config["auto_id"],
                 control_type="Slider"
             )
-            # 等待控件可见且启用
             progress_bar.wait("visible", timeout=UI_TIMIEOUT * 2)
             progress_bar.wait("enabled", timeout=UI_TIMIEOUT * 2)
         except Exception as e:
             raise Exception(f"进度条控件不存在或未就绪：{str(e)}")
 
-        # 2. 校验滑块（Thumb）控件是否存在
+        # 校验滑块控件
         try:
             thumb = progress_bar.child_window(control_type="Thumb")
             thumb.wait("visible", timeout=UI_TIMIEOUT)
@@ -445,7 +443,7 @@ def drag_progress_in_cycles(main_window):
         except Exception as e:
             raise Exception(f"进度条滑块（Thumb）不存在：{str(e)}")
 
-        # 3. 安全获取坐标信息（增加非空校验）
+        # 获取坐标信息
         progress_rect = progress_bar.rectangle()
         if not progress_rect:
             raise Exception("无法获取进度条坐标信息（rectangle为空）")
@@ -454,7 +452,7 @@ def drag_progress_in_cycles(main_window):
         if not thumb_rect:
             raise Exception("无法获取滑块坐标信息（rectangle为空）")
 
-        # 4. 计算有效拖拽长度（增加非负校验）
+        # 计算有效拖拽长度
         valid_length = progress_rect.width() - thumb_rect.width()
         if valid_length <= 0:
             raise Exception(f"进度条有效长度异常（{valid_length}），无法拖拽")
@@ -462,7 +460,7 @@ def drag_progress_in_cycles(main_window):
         current_percent = 0
         target_x_prev = None
 
-        # 5. 循环拖拽（修复循环内变量作用域问题）
+        # 循环拖拽
         for i in range(progress_config["drag_cycles"]):
             # 计算目标百分比
             if i == 0:
@@ -472,13 +470,11 @@ def drag_progress_in_cycles(main_window):
                     target_percent = int(current_percent * 0.5)
                 else:
                     target_percent = int(current_percent * 1.75)
-                # 限制在有效范围
                 target_percent = max(progress_config["min_percent"], 
                                     min(target_percent, progress_config["max_percent"]))
 
-            # 计算目标X坐标（确保为整数）
+            # 计算目标X坐标
             target_x = progress_rect.left + int(valid_length * (target_percent / 100))
-            # 限制在进度条范围内
             target_x = max(progress_rect.left, 
                          min(target_x, progress_rect.right - thumb_rect.width()))
             target_y = progress_rect.top + (progress_rect.height() // 2)
@@ -491,13 +487,13 @@ def drag_progress_in_cycles(main_window):
                 start_x = target_x_prev
                 start_y = target_y
 
-            # 模拟人工拖拽
+            # 模拟拖拽
             mouse.move(coords=(start_x, start_y))
             time.sleep(0.4)
             mouse.press(button="left", coords=(start_x, start_y))
             time.sleep(0.3)
 
-            # 分步移动（避免一次性拖拽）
+            # 分步移动
             step_count = 3
             step_x = (target_x - start_x) // step_count
             step_y = (target_y - start_y) // step_count
@@ -510,7 +506,6 @@ def drag_progress_in_cycles(main_window):
             mouse.release(button="left", coords=(target_x, target_y))
             print(f"第{i+1}次拖拽完成，位置：{target_percent}%")
 
-            # 更新状态变量
             current_percent = target_percent
             target_x_prev = target_x
             time.sleep(1.5)
@@ -520,27 +515,21 @@ def drag_progress_in_cycles(main_window):
         return True
 
     except Exception as e:
-        error_msg = f"进度条拖拽失败：{str(e)}"
+        error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 进度条拖拽失败：{str(e)}"
         print(f"===== {error_msg} =====")
         STATS["module_stats"]["drag_progress_bar"]["fail"] += 1
         STATS["error_log"].append(error_msg)
         return False
-    
 
-
-# 系统API：直接移动窗口（无需鼠标拖拽）
+# 系统API：直接移动窗口
 def move_window(hwnd, x, y):
-    # 获取窗口风格，判断是否有边框
-    # style = ctypes.windll.user32.GetWindowLongPtrW(hwnd, win32defines.GWL_STYLE)
-    # 兼容32/64位系统的窗口风格获取
     if ctypes.sizeof(ctypes.c_void_p) == 8:
         get_window_long = ctypes.windll.user32.GetWindowLongPtrW
     else:
         get_window_long = ctypes.windll.user32.GetWindowLongW
     style = get_window_long(hwnd, win32defines.GWL_STYLE)
-    # 计算窗口客户区到边框的偏移（确保移动后位置准确）
+    
     if style & win32defines.WS_THICKFRAME:
-        # 有边框窗口：修正边框宽度
         rect = ctypes.wintypes.RECT()
         ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
         client_rect = ctypes.wintypes.RECT()
@@ -548,11 +537,10 @@ def move_window(hwnd, x, y):
         border_x = (rect.right - rect.left) - client_rect.right
         border_y = (rect.bottom - rect.top) - client_rect.bottom
         x -= border_x // 2
-        y -= border_y // 3  # 标题栏高度补偿
-    # 直接移动窗口到目标位置
+        y -= border_y // 3
     ctypes.windll.user32.SetWindowPos(
         hwnd, None, x, y, 0, 0,
-        win32defines.SWP_NOSIZE | win32defines.SWP_NOZORDER  # 保持尺寸和层级
+        win32defines.SWP_NOSIZE | win32defines.SWP_NOZORDER
     )
 
 def move_and_close_video_window(main_window, window_title='Video Playback', close_after_move=False):
@@ -564,30 +552,38 @@ def move_and_close_video_window(main_window, window_title='Video Playback', clos
         return True
     try:
         print("\n===== 开始视频窗口移动 =====")
-        # 1. 定位窗口并获取句柄（关键：通过句柄直接操作）
-        video_window = main_window.child_window(control_type="Window", title=window_title)
-        if not video_window.exists(timeout=3) or not video_window.is_visible():
-            raise Exception(f"未找到标题为'{window_title}'的窗口")
+        # 校验窗口是否存在
+        if not main_window.child_window(control_type="Window", title=window_title).exists(timeout=5):
+            raise Exception(f"视频窗口'{window_title}'未出现，无法移动")
         
-        # 获取窗口句柄（HWND）
-        hwnd = video_window.handle
+        video_window = main_window.child_window(control_type="Window", title=window_title)
+        
+        # 获取窗口句柄（带重试）
+        max_retries = 3
+        hwnd = None
+        for retry in range(max_retries):
+            hwnd = video_window.handle
+            if hwnd:
+                break
+            if retry < max_retries - 1:
+                time.sleep(0.5)
         if not hwnd:
-            raise Exception("无法获取窗口句柄，无法移动")
+            raise Exception("无法获取窗口句柄，无法移动（已重试3次）")
 
-        # 2. 获取窗口信息
+        # 获取窗口信息
         window_rect = video_window.rectangle()
         window_width, window_height = window_rect.width(), window_rect.height()
 
-        # 3. 计算目标位置（最右垂直居中）
+        # 计算目标位置
         screen_width = GetSystemMetrics(0)
         screen_height = GetSystemMetrics(1)
         target_x = screen_width - window_width - 10
         target_y = int((screen_height - window_height) / 2)
         print(f"目标位置：({target_x}, {target_y})")
 
-        # 4. 直接移动窗口（绕过鼠标，通过系统API）
+        # 移动窗口
         move_window(hwnd, target_x, target_y)
-        time.sleep(0.5)  # 等待窗口移动完成
+        time.sleep(0.5)
 
         # 验证移动结果
         final_rect = video_window.rectangle()
@@ -597,12 +593,11 @@ def move_and_close_video_window(main_window, window_title='Video Playback', clos
         print(f"'{window_title}'窗口已移动到目标位置")
         time.sleep(1.5)
 
-        # 5. 关闭窗口
+        # 关闭窗口
         if close_after_move:
             try:
                 video_window.child_window(control_type="Button", title='关闭').click_input()
             except:
-                # 直接发送关闭消息
                 ctypes.windll.user32.SendMessageW(hwnd, win32defines.WM_CLOSE, 0, 0)
 
         print("===== 视频窗口操作完成 =====")
@@ -610,12 +605,54 @@ def move_and_close_video_window(main_window, window_title='Video Playback', clos
         return True
 
     except Exception as e:
-        error_msg = f"操作失败：{str(e)}"
+        error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 视频窗口操作失败：{str(e)}"
         print(f"===== {error_msg} =====")
         STATS["module_stats"]["move_video_window"]["fail"] += 1
         STATS["error_log"].append(error_msg)
         return False
-    
+
+def show_video(main_window):
+    """显示视频窗口（带状态判断和重试）"""
+    try:
+        for retry in range(3):
+            try:
+                btn_show_video = main_window.child_window(
+                    auto_id="cb_shipin",
+                    control_type="Button"
+                )
+                btn_show_video.wait("enabled", timeout=UI_TIMIEOUT)
+                
+                # 检查按钮状态（选中表示已显示）
+                print(f'btn_show_video.get_toggle_state()={btn_show_video.get_toggle_state()}')
+                if btn_show_video.get_toggle_state() == 1:
+                    print("视频已显示，无需操作")
+                    return True
+                
+                btn_show_video.click_input()
+                print("视频显示按钮点击成功")
+                return True
+            except Exception as e:
+                if retry < 2:
+                    print(f"视频显示按钮第{retry+1}次点击失败，重试...")
+                    time.sleep(0.5)
+                else:
+                    raise Exception(f"视频显示按钮点击失败：{str(e)}")
+    except Exception as e:
+        error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 视频显示操作异常：{str(e)}"
+        print(error_msg)
+        STATS["error_log"].append(error_msg)
+        return False
+
+def get_playback_speed_index():
+    """直接返回全局变量中记录的索引（无需再读取控件）"""
+    global PLAYBACK_SPEED_INDEX
+    if PLAYBACK_SPEED_INDEX != -1:
+        print(f"当前播放倍速索引（记录值）：{PLAYBACK_SPEED_INDEX+1}")
+        return PLAYBACK_SPEED_INDEX
+    else:
+        print("警告：尚未选择播放倍速，索引记录为空")
+        return -1
+
 def init_application():
     app = None
     try:
@@ -658,15 +695,23 @@ def init_application():
         open_btn = file_dialog.child_window(title="打开(O)", control_type="Button")
         open_btn.click_input()
         print("文件加载中...")
-        time.sleep(5)
+        
+        # 动态等待播放按钮可用
+        wait_until_passes(
+            timeout=60,
+            retry_interval=1,
+            func=lambda: main_window.child_window(title_re="Play", control_type="Button").is_enabled()
+        )
 
         # 启动播放
         play_btn = main_window.child_window(title_re="Play", control_type="Button")
-        play_btn.wait("enabled", timeout=UI_TIMIEOUT)
         play_btn.click_input()
         time.sleep(1)
         print("播放功能启动成功")
 
+        # 初始化视频窗口
+        show_video(main_window)
+        time.sleep(1)
         move_and_close_video_window(main_window)
 
         # 0.2s线切换
@@ -696,6 +741,18 @@ def run_cycle_operations(main_window):
             drag_progress_in_cycles(main_window),
             execute_tag_marking(main_window)
         ]
+        
+        # 根据播放倍速控制视频显示
+        playback_speed_idx = get_playback_speed_index()
+        if playback_speed_idx != -1 and playback_speed_idx <= 4:  # 倍速≤5倍
+            if not main_window.child_window(control_type="Window", title="Video Playback").exists(timeout=1):
+                show_video(main_window)
+                time.sleep(1)
+                move_and_close_video_window(main_window)
+            else:
+                move_and_close_video_window(main_window)
+        else:
+            print("播放倍速>5倍，不显示视频")
 
         if all(module_results):
             STATS['success_cycles'] += 1
@@ -704,16 +761,15 @@ def run_cycle_operations(main_window):
             STATS['fail_cycles'] += 1
             print(f"===== 第 {STATS['total_cycles']} 次循环部分模块失败 =====")
         
-        # 每次循环结束后输出累计统计
+        # 输出累计统计
         print(f"当前累计：总循环 {STATS['total_cycles']} 次，成功 {STATS['success_cycles']} 次，失败 {STATS['fail_cycles']} 次")
         return True
 
     except Exception as e:
-        error_msg = f"第 {STATS['total_cycles']} 次循环异常：{str(e)}"
+        error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 第 {STATS['total_cycles']} 次循环异常：{str(e)}"
         print(error_msg)
         STATS['fail_cycles'] += 1
         STATS['error_log'].append(error_msg)
-        # 异常时也输出累计统计
         print(f"当前累计：总循环 {STATS['total_cycles']} 次，成功 {STATS['success_cycles']} 次，失败 {STATS['fail_cycles']} 次")
         return False
 
@@ -735,10 +791,9 @@ def main():
             if remaining_time > CYCLE_INTERVAL:
                 time.sleep(CYCLE_INTERVAL)
             else:
-                # 只在剩余时间为正数时睡眠，否则直接结束
                 if remaining_time > 0:
                     time.sleep(remaining_time)
-                break  # 无论剩余时间是否为正，都退出循环
+                break
 
         print(f"\n===== 测试完成！=====")
         print(f"总循环次数：{STATS['total_cycles']}")
@@ -750,7 +805,7 @@ def main():
             total = stats["success"] + stats["fail"]
             rate = f"{stats['success']/total*100:.2f}%" if total else "未执行"
             print(f"{module}：成功{stats['success']}次，失败{stats['fail']}次，成功率{rate}")
-
+        
         if STATS['error_log']:
             print(f"\n错误日志（{len(STATS['error_log'])}条）：")
             for idx, err in enumerate(STATS['error_log'], 1):
