@@ -1,17 +1,20 @@
 import random
 import time
 import os
+import ctypes
 import warnings
 from pywinauto import Application, mouse
-from pywinauto.findwindows import find_window, ElementNotFoundError
+from pywinauto.findwindows import find_window
 from pywinauto.timings import wait_until_passes
+from pywinauto.win32functions import GetSystemMetrics
+from pywinauto import win32defines
 
 # 过滤窗口聚焦警告
 warnings.filterwarnings("ignore", category=RuntimeWarning, message="The window has not been focused due to COMError")
 
 # 基础配置
 UI_TIMIEOUT = 3
-TEST_DURATION = 60#12 * 3600  # 12小时
+TEST_DURATION = 12 * 3600  # 12小时
 CYCLE_INTERVAL = 10  # 循环间隔（秒）
 
 # 功能开关配置（控制是否执行）
@@ -20,7 +23,8 @@ RUN_CONFIG = {
     "nav_buttons": True,        # 导航按钮
     "drag_progress_bar": True,  # 进度条拖拽
     "tag_marking": True,        # 标签标记
-    "channel_selection": True   # 通道选择（默认初始化后关闭）
+    "channel_selection": True,  # 通道选择（默认初始化后关闭）
+    "move_video_window":True    # 视频窗口拖动   
 }
 
 # 业务参数配置（核心：下拉框保留auto_id，新增序号定位开关）
@@ -97,7 +101,7 @@ CONFIG = {
         'Identify Event', 'Seizure*', 'Drug-induced Sleep', 'Mechanical Ventilation', 'Facial Twitching'
     },
     "TAG_CONFIG": {
-        "count_range": (2, 10),
+        "count_range": (2, 5),
         "max_down_retries": 5,
         "rollback_after_fail": True
     },
@@ -124,7 +128,8 @@ STATS = {
         "nav_buttons": {"success": 0, "fail": 0},
         "drag_progress_bar": {"success": 0, "fail": 0},
         "tag_marking": {"success": 0, "fail": 0},
-        "channel_selection": {"success": 0, "fail": 0}
+        "channel_selection": {"success": 0, "fail": 0},
+        "move_video_window": {"success": 0, "fail": 0} 
     },
     "error_log": []
 }
@@ -463,10 +468,10 @@ def drag_progress_in_cycles(main_window):
             if i == 0:
                 target_percent = random.randint(1, 30)
             else:
-                if i % 5 == 0:
-                    target_percent = int(current_percent * 0.4)
+                if i % 3 == 0:
+                    target_percent = int(current_percent * 0.5)
                 else:
-                    target_percent = int(current_percent * 1.5)
+                    target_percent = int(current_percent * 1.75)
                 # 限制在有效范围
                 target_percent = max(progress_config["min_percent"], 
                                     min(target_percent, progress_config["max_percent"]))
@@ -520,7 +525,97 @@ def drag_progress_in_cycles(main_window):
         STATS["module_stats"]["drag_progress_bar"]["fail"] += 1
         STATS["error_log"].append(error_msg)
         return False
+    
 
+
+# 系统API：直接移动窗口（无需鼠标拖拽）
+def move_window(hwnd, x, y):
+    # 获取窗口风格，判断是否有边框
+    # style = ctypes.windll.user32.GetWindowLongPtrW(hwnd, win32defines.GWL_STYLE)
+    # 兼容32/64位系统的窗口风格获取
+    if ctypes.sizeof(ctypes.c_void_p) == 8:
+        get_window_long = ctypes.windll.user32.GetWindowLongPtrW
+    else:
+        get_window_long = ctypes.windll.user32.GetWindowLongW
+    style = get_window_long(hwnd, win32defines.GWL_STYLE)
+    # 计算窗口客户区到边框的偏移（确保移动后位置准确）
+    if style & win32defines.WS_THICKFRAME:
+        # 有边框窗口：修正边框宽度
+        rect = ctypes.wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        client_rect = ctypes.wintypes.RECT()
+        ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(client_rect))
+        border_x = (rect.right - rect.left) - client_rect.right
+        border_y = (rect.bottom - rect.top) - client_rect.bottom
+        x -= border_x // 2
+        y -= border_y // 3  # 标题栏高度补偿
+    # 直接移动窗口到目标位置
+    ctypes.windll.user32.SetWindowPos(
+        hwnd, None, x, y, 0, 0,
+        win32defines.SWP_NOSIZE | win32defines.SWP_NOZORDER  # 保持尺寸和层级
+    )
+
+def move_and_close_video_window(main_window, window_title='Video Playback', close_after_move=False):
+    if "move_video_window" not in STATS["module_stats"]:
+        STATS["module_stats"]["move_video_window"] = {"success": 0, "fail": 0}
+    
+    if not RUN_CONFIG.get("move_video_window", True):
+        print("\n【视频窗口移动】已关闭，跳过该模块")
+        return True
+    try:
+        print("\n===== 开始视频窗口移动 =====")
+        # 1. 定位窗口并获取句柄（关键：通过句柄直接操作）
+        video_window = main_window.child_window(control_type="Window", title=window_title)
+        if not video_window.exists(timeout=3) or not video_window.is_visible():
+            raise Exception(f"未找到标题为'{window_title}'的窗口")
+        
+        # 获取窗口句柄（HWND）
+        hwnd = video_window.handle
+        if not hwnd:
+            raise Exception("无法获取窗口句柄，无法移动")
+
+        # 2. 获取窗口信息
+        window_rect = video_window.rectangle()
+        window_width, window_height = window_rect.width(), window_rect.height()
+
+        # 3. 计算目标位置（最右垂直居中）
+        screen_width = GetSystemMetrics(0)
+        screen_height = GetSystemMetrics(1)
+        target_x = screen_width - window_width - 10
+        target_y = int((screen_height - window_height) / 2)
+        print(f"目标位置：({target_x}, {target_y})")
+
+        # 4. 直接移动窗口（绕过鼠标，通过系统API）
+        move_window(hwnd, target_x, target_y)
+        time.sleep(0.5)  # 等待窗口移动完成
+
+        # 验证移动结果
+        final_rect = video_window.rectangle()
+        if abs(final_rect.left - target_x) > 10:
+            raise Exception(f"窗口移动失败（目标X：{target_x}，实际X：{final_rect.left}）")
+
+        print(f"'{window_title}'窗口已移动到目标位置")
+        time.sleep(1.5)
+
+        # 5. 关闭窗口
+        if close_after_move:
+            try:
+                video_window.child_window(control_type="Button", title='关闭').click_input()
+            except:
+                # 直接发送关闭消息
+                ctypes.windll.user32.SendMessageW(hwnd, win32defines.WM_CLOSE, 0, 0)
+
+        print("===== 视频窗口操作完成 =====")
+        STATS["module_stats"]["move_video_window"]["success"] += 1
+        return True
+
+    except Exception as e:
+        error_msg = f"操作失败：{str(e)}"
+        print(f"===== {error_msg} =====")
+        STATS["module_stats"]["move_video_window"]["fail"] += 1
+        STATS["error_log"].append(error_msg)
+        return False
+    
 def init_application():
     app = None
     try:
@@ -572,13 +667,7 @@ def init_application():
         time.sleep(1)
         print("播放功能启动成功")
 
-        # 关闭Video Playback窗口
-        video_window = main_window.child_window(control_type="Window", title='Video Playback')
-        if video_window.exists():
-            safe_set_focus(video_window)
-            close_btn = video_window.child_window(control_type="Button", title='关闭')
-            close_btn.click_input()
-            print("Video Playback窗口已关闭")
+        move_and_close_video_window(main_window)
 
         # 0.2s线切换
         toggle_0_2s_line = main_window.child_window(title_re="0.2s Line", control_type="CheckBox")
@@ -587,12 +676,6 @@ def init_application():
         time.sleep(2)
         print("0.2s line 点击成功")
 
-        # # 初始化通道选择
-        # if RUN_CONFIG["channel_selection"]:
-        #     execute_channel_selection(main_window)
-        #     RUN_CONFIG["channel_selection"] = False  # 初始化后关闭，避免重复执行
-
-        # print("===== 应用初始化完成 =====")
         return app, main_window
 
     except Exception as e:
@@ -611,8 +694,7 @@ def run_cycle_operations(main_window):
             execute_channel_selection(main_window),
             execute_nav_buttons(main_window),
             drag_progress_in_cycles(main_window),
-            execute_tag_marking(main_window),
-            execute_channel_selection(main_window)
+            execute_tag_marking(main_window)
         ]
 
         if all(module_results):
