@@ -370,12 +370,62 @@ def select_specific_channels(main_window):
         if not success:
             raise Exception(f"通道 {num} 未选中")
 
+# def execute_channel_selection(main_window):
+#     if not RUN_CONFIG["channel_selection"]:
+#         print("\n【通道选择】已关闭，跳过该模块")
+#         return True
+#     try:
+#         print("\n===== 开始通道选择 =====")
+#         btn_cl = main_window.child_window(
+#             auto_id=CONFIG["CHANNEL_CONFIG"]["btn_cl_auto_id"],
+#             control_type="Button",
+#             found_index=0
+#         )
+#         btn_cl.wait("enabled", timeout=UI_TIMIEOUT)
+#         btn_cl.click_input()
+#         time.sleep(3)
+#         print("已点击第一个通道列表展开按钮")
+
+#         cbx_all = main_window.child_window(title='All', control_type="CheckBox")
+#         cbx_all.wait("enabled", timeout=UI_TIMIEOUT)
+#         if cbx_all.get_toggle_state() == 1:
+#             cbx_all.click_input()
+#             time.sleep(0.5)
+#             print("已取消全选通道")
+#         else:
+#             print("通道已处于未全选状态")
+
+#         select_specific_channels(main_window)
+
+#         btn_confirm = main_window.child_window(
+#             auto_id=CONFIG["CHANNEL_CONFIG"]["btn_confirm_auto_id"],
+#             control_type="Button",
+#             found_index=0
+#         )
+#         btn_confirm.wait("enabled", timeout=UI_TIMIEOUT)
+#         btn_confirm.click_input()
+#         time.sleep(3)
+#         print(f"已确认选中指定通道：{CONFIG['CHANNEL_CONFIG']['target_channels']}")
+#         print("===== 通道选择完成 =====")
+#         STATS["module_stats"]["channel_selection"]["success"] += 1
+#         return True
+#     except Exception as e:
+#         error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 通道选择失败：{str(e)}"
+#         print(f"===== {error_msg} =====")
+#         STATS["module_stats"]["channel_selection"]["fail"] += 1
+#         STATS["error_log"].append(error_msg)
+#         return False
+# 新增全局变量：标记是否已执行过全不选操作
+HAS_UNSELECTED_ALL = False
+
 def execute_channel_selection(main_window):
+    global HAS_UNSELECTED_ALL  # 引用全局状态标记
     if not RUN_CONFIG["channel_selection"]:
         print("\n【通道选择】已关闭，跳过该模块")
         return True
     try:
         print("\n===== 开始通道选择 =====")
+        # 1. 点击通道列表按钮（第一个）
         btn_cl = main_window.child_window(
             auto_id=CONFIG["CHANNEL_CONFIG"]["btn_cl_auto_id"],
             control_type="Button",
@@ -386,17 +436,56 @@ def execute_channel_selection(main_window):
         time.sleep(3)
         print("已点击第一个通道列表展开按钮")
 
+        # 2. 全不选测试（仅第一次执行）
         cbx_all = main_window.child_window(title='All', control_type="CheckBox")
         cbx_all.wait("enabled", timeout=UI_TIMIEOUT)
+        
+        if not HAS_UNSELECTED_ALL:
+            # 第一次操作：强制全不选
+            if cbx_all.get_toggle_state() == 1:
+                cbx_all.click_input()
+                time.sleep(0.5)
+                print("【全不选测试】已取消全选所有通道")
+            else:
+                print("【全不选测试】通道已处于全不选状态")
+            
+            # 确认全不选状态（验证所有目标通道均未选中）
+            target_channels = CONFIG["CHANNEL_CONFIG"]["target_channels"]
+            for num in target_channels:
+                channel = main_window.child_window(
+                    title_re=rf"^\s*{num}\s*$",
+                    control_type="CheckBox"
+                )
+                if channel.get_toggle_state() == 1:
+                    raise Exception(f"【全不选测试失败】通道 {num} 仍处于选中状态")
+            print("【全不选测试】验证通过，所有通道均未选中")
+            
+            # 临时确认（仅用于测试全不选效果）
+            btn_confirm = main_window.child_window(
+                auto_id=CONFIG["CHANNEL_CONFIG"]["btn_confirm_auto_id"],
+                control_type="Button",
+                found_index=0
+            )
+            btn_confirm.click_input()
+            time.sleep(2)
+            print("【全不选测试】已确认全不选状态")
+            
+            # 重新打开通道列表，准备下一步选择指定通道
+            btn_cl.click_input()
+            time.sleep(3)
+            HAS_UNSELECTED_ALL = True  # 标记为已执行全不选
+
+        # 3. 选择指定通道（无论是否执行过全不选，均重新选择）
+        # 确保全选框处于未选中状态
         if cbx_all.get_toggle_state() == 1:
             cbx_all.click_input()
             time.sleep(0.5)
-            print("已取消全选通道")
-        else:
-            print("通道已处于未全选状态")
-
+            print("已取消全选，准备选择指定通道")
+        
+        # 选中目标通道
         select_specific_channels(main_window)
 
+        # 4. 确认指定通道选择
         btn_confirm = main_window.child_window(
             auto_id=CONFIG["CHANNEL_CONFIG"]["btn_confirm_auto_id"],
             control_type="Button",
@@ -405,7 +494,7 @@ def execute_channel_selection(main_window):
         btn_confirm.wait("enabled", timeout=UI_TIMIEOUT)
         btn_confirm.click_input()
         time.sleep(3)
-        print(f"已确认选中指定通道：{CONFIG['CHANNEL_CONFIG']['target_channels']}")
+        print(f"【指定通道选择】已确认选中指定通道：{CONFIG['CHANNEL_CONFIG']['target_channels']}")
         print("===== 通道选择完成 =====")
         STATS["module_stats"]["channel_selection"]["success"] += 1
         return True
