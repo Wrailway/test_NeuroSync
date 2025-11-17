@@ -505,6 +505,110 @@ def execute_channel_selection(main_window):
         STATS["error_log"].append(error_msg)
         return False
 
+# def drag_progress_in_cycles(main_window):
+#     if not RUN_CONFIG["drag_progress_bar"]:
+#         print("\n【进度条拖拽】已关闭，跳过该模块")
+#         return True
+#     try:
+#         print("\n===== 开始进度条拖拽 =====")
+#         progress_config = CONFIG["PROGRESS_BAR"]
+        
+#         # 校验进度条控件
+#         try:
+#             progress_bar = main_window.child_window(
+#                 auto_id=progress_config["auto_id"],
+#                 control_type="Slider"
+#             )
+#             progress_bar.wait("visible", timeout=UI_TIMIEOUT * 2)
+#             progress_bar.wait("enabled", timeout=UI_TIMIEOUT * 2)
+#         except Exception as e:
+#             raise Exception(f"进度条控件不存在或未就绪：{str(e)}")
+
+#         # 校验滑块控件
+#         try:
+#             thumb = progress_bar.child_window(control_type="Thumb")
+#             thumb.wait("visible", timeout=UI_TIMIEOUT)
+#             thumb.wait("enabled", timeout=UI_TIMIEOUT)
+#         except Exception as e:
+#             raise Exception(f"进度条滑块（Thumb）不存在：{str(e)}")
+
+#         # 获取坐标信息
+#         progress_rect = progress_bar.rectangle()
+#         if not progress_rect:
+#             raise Exception("无法获取进度条坐标信息（rectangle为空）")
+        
+#         thumb_rect = thumb.rectangle()
+#         if not thumb_rect:
+#             raise Exception("无法获取滑块坐标信息（rectangle为空）")
+
+#         # 计算有效拖拽长度
+#         valid_length = progress_rect.width() - thumb_rect.width()
+#         if valid_length <= 0:
+#             raise Exception(f"进度条有效长度异常（{valid_length}），无法拖拽")
+
+#         current_percent = 0
+#         target_x_prev = None
+
+#         # 循环拖拽
+#         for i in range(progress_config["drag_cycles"]):
+#             # 计算目标百分比
+#             if i == 0:
+#                 target_percent = random.randint(1, 30)
+#             else:
+#                 if i % 3 == 0:
+#                     target_percent = int(current_percent * 0.5)
+#                 else:
+#                     target_percent = int(current_percent * 1.75)
+#                 target_percent = max(progress_config["min_percent"], 
+#                                     min(target_percent, progress_config["max_percent"]))
+
+#             # 计算目标X坐标
+#             target_x = progress_rect.left + int(valid_length * (target_percent / 100))
+#             target_x = max(progress_rect.left, 
+#                          min(target_x, progress_rect.right - thumb_rect.width()))
+#             target_y = progress_rect.top + (progress_rect.height() // 2)
+
+#             # 确定拖拽起点
+#             if i == 0:
+#                 start_x = thumb_rect.left + (thumb_rect.width() // 2)
+#                 start_y = thumb_rect.top + (thumb_rect.height() // 2)
+#             else:
+#                 start_x = target_x_prev
+#                 start_y = target_y
+
+#             # 模拟拖拽
+#             mouse.move(coords=(start_x, start_y))
+#             time.sleep(0.4)
+#             mouse.press(button="left", coords=(start_x, start_y))
+#             time.sleep(0.3)
+
+#             # 分步移动
+#             step_count = 3
+#             step_x = (target_x - start_x) // step_count
+#             step_y = (target_y - start_y) // step_count
+#             for step in range(1, step_count + 1):
+#                 current_step_x = start_x + step_x * step
+#                 current_step_y = start_y + step_y * step
+#                 mouse.move(coords=(current_step_x, current_step_y))
+#                 time.sleep(0.15)
+
+#             mouse.release(button="left", coords=(target_x, target_y))
+#             print(f"第{i+1}次拖拽完成，位置：{target_percent}%")
+
+#             current_percent = target_percent
+#             target_x_prev = target_x
+#             time.sleep(1.5)
+
+#         print("===== 进度条拖拽完成 =====")
+#         STATS["module_stats"]["drag_progress_bar"]["success"] += 1
+#         return True
+
+#     except Exception as e:
+#         error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 进度条拖拽失败：{str(e)}"
+#         print(f"===== {error_msg} =====")
+#         STATS["module_stats"]["drag_progress_bar"]["fail"] += 1
+#         STATS["error_log"].append(error_msg)
+#         return False
 def drag_progress_in_cycles(main_window):
     if not RUN_CONFIG["drag_progress_bar"]:
         print("\n【进度条拖拽】已关闭，跳过该模块")
@@ -546,23 +650,43 @@ def drag_progress_in_cycles(main_window):
         if valid_length <= 0:
             raise Exception(f"进度条有效长度异常（{valid_length}），无法拖拽")
 
-        current_percent = 0
+        current_percent = 0  # 初始位置从0%开始
         target_x_prev = None
 
         # 循环拖拽
         for i in range(progress_config["drag_cycles"]):
-            # 计算目标百分比
+            # 计算目标百分比（优化版）
             if i == 0:
-                target_percent = random.randint(1, 30)
+                # 首次拖拽：从0%到10%-40%（避免初始极端位置）
+                target_percent = random.randint(10, 40)
             else:
-                if i % 3 == 0:
-                    target_percent = int(current_percent * 0.5)
+                # 非首次：基于当前位置动态调整，增加随机性和合理性
+                # 1. 70%概率向前拖拽，30%概率向后（模拟用户习惯）
+                is_forward = random.random() < 0.7
+                
+                # 2. 动态步长：位置越靠近边界，步长越小（避免机械感）
+                if is_forward:
+                    # 向前拖拽：当前位置越低，步长越大（0.3~0.8倍）
+                    step_ratio = 0.8 - (current_percent / 100) * 0.5
                 else:
-                    target_percent = int(current_percent * 1.75)
-                target_percent = max(progress_config["min_percent"], 
-                                    min(target_percent, progress_config["max_percent"]))
+                    # 向后拖拽：当前位置越高，步长越大（0.3~0.6倍）
+                    step_ratio = 0.6 - ((100 - current_percent) / 100) * 0.3
+                
+                # 3. 增加±10%随机波动，避免重复模式
+                step_ratio += random.uniform(-0.1, 0.1)
+                step_ratio = max(0.2, min(step_ratio, 0.9))  # 限制步长在合理范围
+                
+                # 4. 计算目标百分比
+                if is_forward:
+                    target_percent = current_percent * (1 + step_ratio)
+                else:
+                    target_percent = current_percent * (1 - step_ratio)
+                
+                # 5. 强制限制在[min, max]范围内
+                target_percent = max(progress_config["min_percent"],
+                                    min(int(target_percent), progress_config["max_percent"]))
 
-            # 计算目标X坐标
+            # 计算目标X坐标（保持原有坐标计算逻辑）
             target_x = progress_rect.left + int(valid_length * (target_percent / 100))
             target_x = max(progress_rect.left, 
                          min(target_x, progress_rect.right - thumb_rect.width()))
@@ -576,13 +700,12 @@ def drag_progress_in_cycles(main_window):
                 start_x = target_x_prev
                 start_y = target_y
 
-            # 模拟拖拽
+            # 模拟拖拽（保留分步移动逻辑，更贴近人工操作）
             mouse.move(coords=(start_x, start_y))
             time.sleep(0.4)
             mouse.press(button="left", coords=(start_x, start_y))
             time.sleep(0.3)
 
-            # 分步移动
             step_count = 3
             step_x = (target_x - start_x) // step_count
             step_y = (target_y - start_y) // step_count
@@ -593,7 +716,7 @@ def drag_progress_in_cycles(main_window):
                 time.sleep(0.15)
 
             mouse.release(button="left", coords=(target_x, target_y))
-            print(f"第{i+1}次拖拽完成，位置：{target_percent}%")
+            print(f"第{i+1}次拖拽完成，位置：{target_percent}%（从{current_percent}%移动）")
 
             current_percent = target_percent
             target_x_prev = target_x
